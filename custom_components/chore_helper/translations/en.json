@@ -107,11 +107,7 @@
             "week_order_number": "Select 1 or more weeks",
             "period": "Period must be a number between 1 and 1000",
             "first_week": "First week must be a number between 1 and 52",
-            "date": "Invalid date format!"
-        }
-    },
-    "options": {
-        "error": {
+            "date": "Invalid date format!",
             "assignee_user": "User not found!"
         }
     },
