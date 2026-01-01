@@ -4,10 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from homeassistant.core import HomeAssistant
 
 from custom_components.chore_helper import config_flow
-from custom_components.chore_helper import const
 
 
 @pytest.mark.asyncio

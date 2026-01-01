@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any, cast, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from homeassistant.helpers.schema_config_entry_flow import SchemaCommonFlowHandler
 
 import voluptuous as vol
 from homeassistant.const import ATTR_HIDDEN, CONF_NAME
@@ -370,7 +373,7 @@ async def choose_details_step(_: dict[str, Any]) -> str:
 def _schema_with_parent_hass(schema_func):
     """Wrap a schema function so it extracts hass from the parent handler."""
 
-    async def _wrapped(handler: "SchemaCommonFlowHandler") -> vol.Schema | None:  # type: ignore[name-defined]
+    async def _wrapped(handler: SchemaCommonFlowHandler) -> vol.Schema | None:  # type: ignore[name-defined]
         hass_instance = getattr(handler.parent_handler, "hass", None)
         return await schema_func(handler, hass=hass_instance)
 
@@ -378,7 +381,7 @@ def _schema_with_parent_hass(schema_func):
 
 
 async def _validate_with_parent_hass(
-    handler: "SchemaCommonFlowHandler", data: dict[str, Any]
+    handler: SchemaCommonFlowHandler, data: dict[str, Any]
 ) -> dict[str, Any]:  # type: ignore[name-defined]
     """Validate user input using hass from parent handler."""
 

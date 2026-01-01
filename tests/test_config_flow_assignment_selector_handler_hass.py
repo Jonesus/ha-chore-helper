@@ -4,13 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from homeassistant.core import HomeAssistant
 
 from custom_components.chore_helper import config_flow
 
 
 @pytest.mark.asyncio
 async def test_general_config_schema_uses_placeholder_when_no_hass() -> None:
+    """Ensure the config schema returns a SelectSelector with a placeholder when handler has no hass."""
     handler = SimpleNamespace(options={})
 
     schema = await config_flow.general_config_schema(handler)
@@ -42,6 +42,7 @@ async def test_general_config_schema_uses_placeholder_when_no_hass() -> None:
 
 @pytest.mark.asyncio
 async def test_general_options_schema_uses_placeholder_when_no_hass() -> None:
+    """Ensure the options schema returns a SelectSelector with a placeholder when handler has no hass."""
     handler = SimpleNamespace(options={})
 
     schema = await config_flow.general_options_schema(handler)

@@ -2,13 +2,9 @@
 
 from .chore import Chore
 from .const import LOGGER
-from . import helpers
-from datetime import date, datetime
+from datetime import date
 from dateutil.relativedelta import relativedelta
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.util.dt import (
-    now as ha_now,
-)  # Import Home Assistant's timezone-aware `now`
 
 
 class DailyChore(Chore):

@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from homeassistant.core import HomeAssistant
 
 from custom_components.chore_helper import config_flow
 
