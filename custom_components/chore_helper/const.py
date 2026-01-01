@@ -30,6 +30,14 @@ ATTR_FORECAST_DATES = "forecast_dates"
 ATTR_DATE_FORMAT = "date_format"
 ATTR_SHOW_OVERDUE_TODAY = "show_overdue_today"
 
+# Assignment-related constants
+CONF_ASSIGNEE_USER = "assignee_user"
+CONF_AUTO_ASSIGN = "auto_assign"
+ATTR_ASSIGNEE = "assignee_user_id"
+ATTR_LAST_ASSIGNED = "last_assigned_user_id"
+ATTR_AUTO_ASSIGN = "auto_assign"
+DEFAULT_AUTO_ASSIGN = False
+
 BINARY_SENSOR_DEVICE_CLASS = "connectivity"
 DEVICE_CLASS = "chore_helper__schedule"
 
@@ -66,7 +74,7 @@ DEFAULT_FREQUENCY = "every-n-days"
 DEFAULT_PERIOD = 1
 DEFAULT_FIRST_WEEK = 1
 DEFAULT_DATE_FORMAT = "%b-%d-%Y"
-DEFAULT_FORECAST_DATES = 1
+DEFAULT_FORECAST_DATES = 10
 DEFAULT_SHOW_OVERDUE_TODAY = False
 
 DEFAULT_ICON_NORMAL = "mdi:broom"

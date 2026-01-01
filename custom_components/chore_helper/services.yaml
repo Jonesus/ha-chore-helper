@@ -63,3 +63,16 @@ update_state:
     entity_id:
       description: The chore sensor entity_id.
       example: sensor.sweep_floor
+assign:
+  description: Assign a chore to a Home Assistant user (or clear by omitting user).
+  target:
+    entity:
+      integration: chore_helper
+      domain: sensor
+  fields:
+    entity_id:
+      description: The chore sensor entity_id.
+      example: sensor.sweep_floor
+    assignee_user:
+      description: The Home Assistant user ID to assign the chore to. Leave empty to clear assignment.
+      example: '12ab34cd'

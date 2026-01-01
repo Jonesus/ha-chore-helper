@@ -1,4 +1,4 @@
-New fork by Benjamin-299
+Forked from [benjamin-299/ha-chore-helper](https://github.com/Benjamin-299/ha-chore-helper)
 
 # Chore Helper for Home Assistant
 
@@ -118,6 +118,16 @@ This service can be called to add a due date to a chore manually. This is useful
 | `entity_id`            | No       | The entity ID of the chore or chores to add a due date to. |
 | `date`                 | No       | The date the chore is due.                                 |
 
+### chore_helper.assign
+
+This service assigns a chore to a Home Assistant user or clears the assignment if the user is omitted.
+
+| Service Data Attribute | Optional | Description                                                |
+| ---------------------- | -------- | ---------------------------------------------------------- |
+| `entity_id`            | No       | The entity ID of the chore or chores to assign.           |
+| `assignee_user`        | Yes      | The Home Assistant user ID to assign the chore to. Leave empty to clear the assignment. |
+
+You can also configure an `assignee` and `auto_assign` options when creating the chore helper via the UI. When `auto_assign` is enabled, the chore will automatically rotate to the next eligible Home Assistant user when the chore is completed.
 ### chore_helper.offset_date
 
 This service can be called to offset the next due date of a chore. This will only affect the next due date for "every" chores, but will affect all future due dates for "after" chores since they are fluid and based on the previous date.

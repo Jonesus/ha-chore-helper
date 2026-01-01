@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import homeassistant.helpers.config_validation as cv
-import homeassistant.util.dt as dt_util
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_HIDDEN,
@@ -113,6 +113,13 @@ OFFSET_DATE_SCHEMA = vol.Schema(
     }
 )
 
+ASSIGN_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_ENTITY_ID): vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional(const.CONF_ASSIGNEE_USER): cv.string,
+    }
+)
+
 
 # pylint: disable=unused-argument
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -187,7 +194,11 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         entity_ids = call.data.get(CONF_ENTITY_ID, [])
         last_completed = call.data.get(const.ATTR_LAST_COMPLETED, None)
 
-        LOGGER.debug("Handling complete_chore. Entity IDs: %s, Last completed: %s", entity_ids, last_completed)
+        LOGGER.debug(
+            "Handling complete_chore. Entity IDs: %s, Last completed: %s",
+            entity_ids,
+            last_completed,
+        )
 
         # Evaluate the template if last_completed is a template string
         if isinstance(last_completed, Template):
@@ -235,6 +246,25 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.services.async_register(
         const.DOMAIN, "offset_date", handle_offset_date, schema=OFFSET_DATE_SCHEMA
     )
+
+    async def handle_assign_chore(call: ServiceCall) -> None:
+        """Handle the assign_chore service call."""
+        entity_ids = call.data.get(CONF_ENTITY_ID, [])
+        user_id = call.data.get(const.CONF_ASSIGNEE_USER, None)
+        for entity_id in entity_ids:
+            LOGGER.debug("assign_chore called for %s to user %s", entity_id, user_id)
+            try:
+                entity = hass.data[const.DOMAIN][const.SENSOR_PLATFORM][entity_id]
+                await entity.assign_user(user_id)
+            except KeyError as err:
+                LOGGER.error(
+                    "Failed assigning user %s to %s - %s", user_id, entity_id, err
+                )
+
+    hass.services.async_register(
+        const.DOMAIN, "assign", handle_assign_chore, schema=ASSIGN_SCHEMA
+    )
+
     return True
 
 

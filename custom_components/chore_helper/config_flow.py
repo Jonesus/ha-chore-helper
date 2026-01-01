@@ -18,10 +18,13 @@ from homeassistant.helpers.schema_config_entry_flow import (
 )
 
 from . import const, helpers
+from .const import LOGGER
 
 
 async def _validate_config(
-    _: SchemaConfigFlowHandler | SchemaOptionsFlowHandler, data: Any
+    handler: SchemaConfigFlowHandler | SchemaOptionsFlowHandler,
+    data: Any,
+    hass: Any | None = None,
 ) -> Any:
     """Validate config."""
     if const.CONF_DAY_OF_MONTH in data and data[const.CONF_DAY_OF_MONTH] < 1:
@@ -48,6 +51,19 @@ async def _validate_config(
 
     if const.CONF_CHORE_DAY in data and data[const.CONF_CHORE_DAY] == "0":
         data[const.CONF_CHORE_DAY] = None
+
+    # Validate provided assignee user exists (if provided)
+    if const.CONF_ASSIGNEE_USER in data and data[const.CONF_ASSIGNEE_USER]:
+        # Prefer explicit hass provided by calling code, else try handler.hass
+        hass_instance = hass if hass is not None else getattr(handler, "hass", None)
+        if hass_instance is None:
+            # Can't validate without hass; raise schema error to force user correction
+            raise SchemaFlowError("assignee_user")
+        try:
+            await hass_instance.auth.async_get_user(data[const.CONF_ASSIGNEE_USER])  # type: ignore[attr-defined]
+        except Exception:
+            raise SchemaFlowError("assignee_user")
+
     return data
 
 
@@ -81,6 +97,7 @@ def general_schema_definition(
     handler: SchemaConfigFlowHandler | SchemaOptionsFlowHandler,
 ) -> Mapping[str, Any]:
     """Create general schema."""
+    # Assignee selection will be built dynamically from hass.auth users at runtime
     schema = {
         required(
             const.CONF_FREQUENCY, handler.options, const.DEFAULT_FREQUENCY
@@ -116,6 +133,9 @@ def general_schema_definition(
             handler.options,
             const.DEFAULT_SHOW_OVERDUE_TODAY,
         ): bool,
+        optional(
+            const.CONF_AUTO_ASSIGN, handler.options, const.DEFAULT_AUTO_ASSIGN
+        ): bool,
     }
 
     return schema
@@ -123,18 +143,102 @@ def general_schema_definition(
 
 async def general_config_schema(
     handler: SchemaConfigFlowHandler | SchemaOptionsFlowHandler,
+    hass: Any | None = None,
 ) -> vol.Schema:
-    """Generate config schema."""
+    """Generate config schema.
+
+    The optional `hass` argument allows callers (e.g., the config flow handler) to
+    provide the Home Assistant instance explicitly. This avoids relying on
+    `handler.hass`, which may not exist for some schema handlers.
+    """
     schema_obj = {required(CONF_NAME, handler.options): selector.TextSelector()}
     schema_obj.update(general_schema_definition(handler))
+
+    # Always expose an assignee dropdown. When possible, populate it from hass.auth users;
+    # otherwise provide a single placeholder option so the UI shows a Select.
+    placeholder_option = selector.SelectOptionDict(value="", label="No users available")
+
+    hass_instance = hass if hass is not None else getattr(handler, "hass", None)
+
+    if hass_instance is not None:
+        try:
+            users = await hass_instance.auth.async_get_users()  # type: ignore[attr-defined]
+            eligible = [
+                u
+                for u in users
+                if not getattr(u, "is_system", False) and getattr(u, "is_active", True)
+            ]
+            if eligible:
+                options = [
+                    selector.SelectOptionDict(value=u.id, label=(u.name or u.id))
+                    for u in eligible
+                ]
+            else:
+                options = [placeholder_option]
+        except Exception as e:
+            LOGGER.error("Error fetching users for assignee selector: %s", e)
+            options = [placeholder_option]
+    else:
+        options = [placeholder_option]
+
+    schema_obj[optional(const.CONF_ASSIGNEE_USER, handler.options)] = (
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=options, mode=selector.SelectSelectorMode.DROPDOWN
+            )
+        )
+    )
+
     return vol.Schema(schema_obj)
 
 
 async def general_options_schema(
     handler: SchemaConfigFlowHandler | SchemaOptionsFlowHandler,
+    hass: Any | None = None,
 ) -> vol.Schema:
-    """Generate options schema."""
-    return vol.Schema(general_schema_definition(handler))
+    """Generate options schema.
+
+    The optional `hass` argument allows callers (e.g., the options flow handler) to
+    provide the Home Assistant instance explicitly.
+    """
+    schema_mapping = dict(general_schema_definition(handler))
+
+    # Always expose an assignee dropdown. When possible, populate it from hass.auth users;
+    # otherwise provide a single placeholder option so the UI shows a Select.
+    placeholder_option = selector.SelectOptionDict(value="", label="No users available")
+
+    hass_instance = hass if hass is not None else getattr(handler, "hass", None)
+
+    if hass_instance is not None:
+        try:
+            users = await hass_instance.auth.async_get_users()  # type: ignore[attr-defined]
+            eligible = [
+                u
+                for u in users
+                if not getattr(u, "is_system", False) and getattr(u, "is_active", True)
+            ]
+            if eligible:
+                options = [
+                    selector.SelectOptionDict(value=u.id, label=(u.name or u.id))
+                    for u in eligible
+                ]
+            else:
+                options = [placeholder_option]
+        except Exception as e:
+            LOGGER.error("Error fetching users for assignee selector: %s", e)
+            options = [placeholder_option]
+    else:
+        options = [placeholder_option]
+
+    schema_mapping[optional(const.CONF_ASSIGNEE_USER, handler.options)] = (
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=options, mode=selector.SelectSelectorMode.DROPDOWN
+            )
+        )
+    )
+
+    return vol.Schema(schema_mapping)
 
 
 async def detail_config_schema(
@@ -263,16 +367,41 @@ async def choose_details_step(_: dict[str, Any]) -> str:
     return "detail"
 
 
+def _schema_with_parent_hass(schema_func):
+    """Wrap a schema function so it extracts hass from the parent handler."""
+
+    async def _wrapped(handler: "SchemaCommonFlowHandler") -> vol.Schema | None:  # type: ignore[name-defined]
+        hass_instance = getattr(handler.parent_handler, "hass", None)
+        return await schema_func(handler, hass=hass_instance)
+
+    return _wrapped
+
+
+async def _validate_with_parent_hass(
+    handler: "SchemaCommonFlowHandler", data: dict[str, Any]
+) -> dict[str, Any]:  # type: ignore[name-defined]
+    """Validate user input using hass from parent handler."""
+
+    hass_instance = getattr(handler.parent_handler, "hass", None)
+    return await _validate_config(handler, data, hass=hass_instance)
+
+
+# Module-level flow definitions (required at class creation time)
 CONFIG_FLOW: dict[str, SchemaFlowFormStep | SchemaFlowMenuStep] = {
-    "user": SchemaFlowFormStep(general_config_schema, next_step=choose_details_step),
+    "user": SchemaFlowFormStep(
+        _schema_with_parent_hass(general_config_schema), next_step=choose_details_step
+    ),
     "detail": SchemaFlowFormStep(
-        detail_config_schema, validate_user_input=_validate_config
+        detail_config_schema, validate_user_input=_validate_with_parent_hass
     ),
 }
+
 OPTIONS_FLOW: dict[str, SchemaFlowFormStep | SchemaFlowMenuStep] = {
-    "init": SchemaFlowFormStep(general_options_schema, next_step=choose_details_step),
+    "init": SchemaFlowFormStep(
+        _schema_with_parent_hass(general_options_schema), next_step=choose_details_step
+    ),
     "detail": SchemaFlowFormStep(
-        detail_config_schema, validate_user_input=_validate_config
+        detail_config_schema, validate_user_input=_validate_with_parent_hass
     ),
 }
 

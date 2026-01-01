@@ -1,4 +1,5 @@
 """Global fixtures for Chore Helper integration."""
+
 # Fixtures allow you to replace functions with a Mock object. You can perform
 # many options via the Mock to reflect a particular behavior from the original
 # function that you want to see without going through the function's actual logic.
@@ -21,11 +22,11 @@ import pytest
 pytest_plugins = "pytest_homeassistant_custom_component"
 
 
-# This fixture enables loading custom integrations in all tests.
-# Remove to enable selective use of this fixture
-@pytest.fixture(autouse=True)
+# This fixture enables loading custom integrations in tests that explicitly use it.
+# It is *not* autouse so tests can run without relying on enable_custom_integrations.
+@pytest.fixture
 def auto_enable_custom_integrations(enable_custom_integrations):
-    """Enable custom integrations."""
+    """Enable custom integrations when requested by a test."""
     yield
 
 

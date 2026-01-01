@@ -14,8 +14,12 @@ from homeassistant.const import (
     CONF_NAME,
 )
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.util.dt import now as ha_now  # Import Home Assistant's timezone-aware `now`
-from homeassistant.util.dt import as_local  # Import function to convert to local timezone
+from homeassistant.util.dt import (
+    now as ha_now,
+)  # Import Home Assistant's timezone-aware `now`
+from homeassistant.util.dt import (
+    as_local,
+)  # Import function to convert to local timezone
 
 from . import const, helpers
 from .const import LOGGER
@@ -54,6 +58,9 @@ class Chore(RestoreEntity):
         "_remove_dates",
         "show_overdue_today",
         "config_entry",
+        "_assignee_user_id",
+        "_auto_assign",
+        "_last_assigned_user_id",
         "last_completed",
     )
 
@@ -107,13 +114,22 @@ class Chore(RestoreEntity):
         except ValueError:
             self._start_date = None
 
+        # Assignment configuration
+        self._assignee_user_id: str | None = config.get(const.CONF_ASSIGNEE_USER)
+        self._auto_assign: bool = config.get(
+            const.CONF_AUTO_ASSIGN, const.DEFAULT_AUTO_ASSIGN
+        )
+        self._last_assigned_user_id: str | None = None
+
     async def async_added_to_hass(self) -> None:
         """When sensor is added to HA, restore state and add it to calendar."""
         await super().async_added_to_hass()
 
         # Ensure entity_id is assigned
         if not self.entity_id:
-            self.entity_id = self.registry_entry.entity_id if self.registry_entry else None
+            self.entity_id = (
+                self.registry_entry.entity_id if self.registry_entry else None
+            )
             if not self.entity_id:
                 LOGGER.error("Entity ID is not assigned for %s", self._attr_name)
                 return
@@ -145,6 +161,13 @@ class Chore(RestoreEntity):
             self._offset_dates = state.attributes.get(const.ATTR_OFFSET_DATES, None)
             self._add_dates = state.attributes.get(const.ATTR_ADD_DATES, None)
             self._remove_dates = state.attributes.get(const.ATTR_REMOVE_DATES, None)
+            # Restore assignment attributes if present
+            self._assignee_user_id = state.attributes.get(
+                const.ATTR_ASSIGNEE, self._assignee_user_id
+            )
+            self._last_assigned_user_id = state.attributes.get(
+                const.ATTR_LAST_ASSIGNED, None
+            )
 
         # Create or add to calendar
         if not self.hidden:
@@ -244,7 +267,11 @@ class Chore(RestoreEntity):
             const.ATTR_LAST_UPDATED: self.last_updated,
             const.ATTR_OVERDUE: self.overdue,
             const.ATTR_OVERDUE_DAYS: self.overdue_days,
-            const.ATTR_NEXT_DATE: as_local(datetime.combine(self.next_due_date, time.min)) if self.next_due_date else None,
+            const.ATTR_NEXT_DATE: (
+                as_local(datetime.combine(self.next_due_date, time.min))
+                if self.next_due_date
+                else None
+            ),
             const.ATTR_OFFSET_DATES: self.offset_dates,
             const.ATTR_ADD_DATES: self.add_dates,
             const.ATTR_REMOVE_DATES: self.remove_dates,
@@ -258,6 +285,9 @@ class Chore(RestoreEntity):
             const.ATTR_START_DATE: self._start_date,
             const.ATTR_FORECAST_DATES: self._forecast_dates,
             const.ATTR_SHOW_OVERDUE_TODAY: self.show_overdue_today,
+            const.ATTR_ASSIGNEE: self._assignee_user_id,
+            const.ATTR_LAST_ASSIGNED: self._last_assigned_user_id,
+            const.ATTR_AUTO_ASSIGN: self._auto_assign,
         }
 
     @property
@@ -376,7 +406,11 @@ class Chore(RestoreEntity):
 
     async def complete(self, last_completed: datetime) -> None:
         """Mark the chore as completed and update the state."""
-        LOGGER.debug("(%s) Completing chore with last_completed: %s", self._attr_name, last_completed)
+        LOGGER.debug(
+            "(%s) Completing chore with last_completed: %s",
+            self._attr_name,
+            last_completed,
+        )
         self.last_completed = last_completed
         await self._async_load_due_dates()
         if not self._due_dates:
@@ -384,14 +418,70 @@ class Chore(RestoreEntity):
                 "(%s) No due dates calculated after completion. Check configuration.",
                 self._attr_name,
             )
+
+        # Assignment logic: if auto_assign is enabled, rotate assignment among eligible HA users
+        if self._auto_assign:
+            try:
+                users = await self.hass.auth.async_get_users()
+                # Filter out system accounts and disabled users
+                eligible = [
+                    u
+                    for u in users
+                    if not getattr(u, "is_system", False)
+                    and getattr(u, "is_active", True)
+                ]
+                if not eligible:
+                    LOGGER.warning(
+                        "(%s) No eligible HA users found for assignment.",
+                        self._attr_name,
+                    )
+                    self._assignee_user_id = None
+                else:
+                    # Deterministic order by user name (fallback to id)
+                    eligible.sort(key=lambda u: ((u.name or "").lower(), u.id))
+                    next_user = None
+                    if self._last_assigned_user_id is not None:
+                        ids = [u.id for u in eligible]
+                        if self._last_assigned_user_id in ids:
+                            idx = ids.index(self._last_assigned_user_id)
+                            next_user = eligible[(idx + 1) % len(eligible)]
+                    if next_user is None:
+                        next_user = eligible[0]
+                    self._assignee_user_id = next_user.id
+                    self._last_assigned_user_id = next_user.id
+
+                    event_data = {
+                        "entity_id": self.entity_id,
+                        "assignee_user_id": self._assignee_user_id,
+                        "assignee_name": next_user.name,
+                    }
+                    self.hass.bus.async_fire("chore_assigned", event_data)
+                    LOGGER.debug(
+                        "(%s) Assigned chore to user %s (%s)",
+                        self._attr_name,
+                        next_user.name,
+                        next_user.id,
+                    )
+            except (
+                Exception
+            ):  # be defensive; do not let assignment failures break completion
+                LOGGER.exception("(%s) Error during assignment logic", self._attr_name)
+
         self.update_state()
 
     async def _async_load_due_dates(self) -> None:
         """Load due dates based on the last completed date."""
-        LOGGER.debug("(%s) Loading due dates. Last completed: %s, Start date: %s", 
-                     self._attr_name, self.last_completed, self._start_date)
+        LOGGER.debug(
+            "(%s) Loading due dates. Last completed: %s, Start date: %s",
+            self._attr_name,
+            self.last_completed,
+            self._start_date,
+        )
         if self.last_completed is None:
-            LOGGER.warning("(%s) Last completed is None. Using start date to calculate due dates.", self._attr_name)
+            LOGGER.warning(
+                "(%s) Last completed is None. Using start date to calculate due dates.",
+                self._attr_name,
+            )
             self._due_dates = [self._add_period_offset(self._start_date)]
         else:
             self._due_dates = [self._add_period_offset(self.last_completed.date())]
@@ -488,6 +578,20 @@ class Chore(RestoreEntity):
         if not await self._async_ready_for_update() or not self.hass.is_running:
             return
 
+        if not self.entity_id:
+            # Suppress warning if the entity is still initializing
+            if not self.registry_entry:
+                LOGGER.debug(
+                    "Entity ID is not yet assigned for %s. Initialization in progress.",
+                    self._attr_name,
+                )
+            else:
+                LOGGER.warning(
+                    "Entity ID is not assigned for %s. Skipping update.",
+                    self._attr_name,
+                )
+            return
+
         LOGGER.debug("(%s) Calling update", self._attr_name)
         await self._async_load_due_dates()
         LOGGER.debug(
@@ -504,6 +608,13 @@ class Chore(RestoreEntity):
 
     def update_state(self) -> None:
         """Pick the first event from chore dates, update attributes."""
+        if not self.entity_id:
+            LOGGER.error(
+                "Entity ID is not assigned for %s. Skipping state update.",
+                self._attr_name,
+            )
+            return
+
         LOGGER.debug("(%s) Looking for next chore date", self._attr_name)
         self._last_updated = ha_now()  # Use timezone-aware `now`
         today = self._last_updated.date()
@@ -553,7 +664,55 @@ class Chore(RestoreEntity):
             "next_due_date": self._next_due_date,
             "overdue": self._overdue,
             "overdue_days": self._overdue_days,
+            const.ATTR_ASSIGNEE: self._assignee_user_id,
+            const.ATTR_LAST_ASSIGNED: self._last_assigned_user_id,
+            const.ATTR_AUTO_ASSIGN: self._auto_assign,
         }
+
+    async def assign_user(self, user_id: str | None) -> None:
+        """Assign or clear an assignee for this chore.
+
+        If user_id is None or empty, clear the assignee. Otherwise validate the user exists
+        and set as assignee. Fires a "chore_assigned" event.
+        """
+        # Treat empty string as None
+        if user_id == "" or user_id is None:
+            self._assignee_user_id = None
+            self._last_assigned_user_id = None
+            LOGGER.debug("(%s) Cleared assignee", self._attr_name)
+            event_data = {"entity_id": self.entity_id, "assignee_user_id": None}
+            self.hass.bus.async_fire("chore_assigned", event_data)
+            self.update_state()
+            return
+
+        # Validate the user via hass.auth
+        try:
+            user = await self.hass.auth.async_get_user(user_id)  # type: ignore[attr-defined]
+            if user is None:
+                raise Exception
+        except Exception:
+            LOGGER.warning(
+                "(%s) Requested assignee user_id not found: %s",
+                self._attr_name,
+                user_id,
+            )
+            return
+
+        self._assignee_user_id = user_id
+        self._last_assigned_user_id = user_id
+        event_data = {
+            "entity_id": self.entity_id,
+            "assignee_user_id": user_id,
+            "assignee_name": user.name,
+        }
+        self.hass.bus.async_fire("chore_assigned", event_data)
+        LOGGER.debug(
+            "(%s) Manually assigned chore to %s (%s)",
+            self._attr_name,
+            user.name,
+            user.id,
+        )
+        self.update_state()
 
     def calculate_day1(self, day1: date, schedule_start_date: date) -> date:
         """Calculate day1."""

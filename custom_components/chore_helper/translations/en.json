@@ -14,7 +14,9 @@
                     "icon_today": "Icon due today (mdi:bell) - optional",
                     "icon_overdue": "Icon overdue (mdi:bell-alert) - optional",
                     "forecast_dates": "Number of future due dates to forecast",
-                    "show_overdue_today": "Show overdue chore today on calendar"
+                    "show_overdue_today": "Show overdue chore today on calendar",
+                    "assignee_user": "Optional Home Assistant user to assign this chore to",
+                    "auto_assign": "Automatically assign this chore to an HA user after completion"
                 }
             },
             "detail": {
@@ -48,7 +50,8 @@
             "week_order_number": "Select 1 or more weeks",
             "period": "Period must be a number between 1 and 1000",
             "first_week": "First week must be a number between 1 and 52",
-            "date": "Invalid date format!"
+            "date": "Invalid date format!",
+            "assignee_user": "User not found!"
         },
         "abort": {
             "single_instance_allowed": "Only a single configuration of Chore Helper is allowed."
@@ -68,7 +71,9 @@
                     "icon_today": "Icon due today (mdi:bell) - optional",
                     "icon_overdue": "Icon overdue (mdi:bell-alert) - optional",
                     "forecast_dates": "Number of future due dates to forecast",
-                    "show_overdue_today": "Show overdue chore today on calendar"
+                    "show_overdue_today": "Show overdue chore today on calendar",
+                    "assignee_user": "Optional Home Assistant user to assign this chore to",
+                    "auto_assign": "Automatically assign this chore to an HA user after completion"
                 }
             },
             "detail": {
@@ -103,6 +108,11 @@
             "period": "Period must be a number between 1 and 1000",
             "first_week": "First week must be a number between 1 and 52",
             "date": "Invalid date format!"
+        }
+    },
+    "options": {
+        "error": {
+            "assignee_user": "User not found!"
         }
     },
     "services": {
@@ -173,6 +183,20 @@
                 "entity_id": {
                     "name": "Entity ID",
                     "description": "The chore sensor entity_id"
+                }
+            }
+        },
+        "assign": {
+            "name": "Assign chore",
+            "description": "Assign a chore to a Home Assistant user (or clear by omitting user).",
+            "fields": {
+                "entity_id": {
+                    "name": "Entity ID",
+                    "description": "The chore sensor entity_id"
+                },
+                "assignee_user": {
+                    "name": "Assignee user",
+                    "description": "The Home Assistant user ID to assign the chore to. Leave empty to clear assignment."
                 }
             }
         }
