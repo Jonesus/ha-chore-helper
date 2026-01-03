@@ -116,7 +116,7 @@ OFFSET_DATE_SCHEMA = vol.Schema(
 ASSIGN_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_ENTITY_ID): vol.All(cv.ensure_list, [cv.string]),
-        vol.Optional(const.CONF_ASSIGNEE_USER): cv.string,
+        vol.Optional(const.CONF_ASSIGNEE_USER): cv.entity_id,
     }
 )
 

@@ -419,48 +419,76 @@ class Chore(RestoreEntity):
                 self._attr_name,
             )
 
-        # Assignment logic: if auto_assign is enabled, rotate assignment among eligible HA users
+        # Assignment logic: if auto_assign is enabled, rotate assignment among eligible person entities
         if self._auto_assign:
             try:
                 users = await self.hass.auth.async_get_users()
-                # Filter out system accounts and disabled users
-                eligible = [
+                eligible_users = [
                     u
                     for u in users
                     if not getattr(u, "is_system", False)
                     and getattr(u, "is_active", True)
                 ]
-                if not eligible:
+                eligible_user_ids = [u.id for u in eligible_users]
+
+                # Look for person entities that are linked to eligible users
+                states = (
+                    self.hass.states.async_all()
+                    if hasattr(self.hass.states, "async_all")
+                    else self.hass.states
+                )
+                persons = [
+                    s
+                    for s in states
+                    if getattr(s, "entity_id", "").startswith("person.")
+                ]
+                eligible_persons = [
+                    p
+                    for p in persons
+                    if p.attributes.get("user_id") in eligible_user_ids
+                ]
+
+                # If no linked persons, fall back to any person entities
+                candidates = eligible_persons or persons
+
+                if not candidates:
                     LOGGER.warning(
-                        "(%s) No eligible HA users found for assignment.",
+                        "(%s) No eligible person entities found for assignment.",
                         self._attr_name,
                     )
                     self._assignee_user_id = None
                 else:
-                    # Deterministic order by user name (fallback to id)
-                    eligible.sort(key=lambda u: ((u.name or "").lower(), u.id))
-                    next_user = None
+                    # Deterministic order by person name (fallback to entity_id)
+                    candidates.sort(
+                        key=lambda p: (
+                            (getattr(p, "name", "") or "").lower(),
+                            p.entity_id,
+                        )
+                    )
+                    next_person = None
                     if self._last_assigned_user_id is not None:
-                        ids = [u.id for u in eligible]
+                        ids = [p.entity_id for p in candidates]
                         if self._last_assigned_user_id in ids:
                             idx = ids.index(self._last_assigned_user_id)
-                            next_user = eligible[(idx + 1) % len(eligible)]
-                    if next_user is None:
-                        next_user = eligible[0]
-                    self._assignee_user_id = next_user.id
-                    self._last_assigned_user_id = next_user.id
+                            next_person = candidates[(idx + 1) % len(candidates)]
+                    if next_person is None:
+                        next_person = candidates[0]
+                    self._assignee_user_id = next_person.entity_id
+                    self._last_assigned_user_id = next_person.entity_id
 
                     event_data = {
                         "entity_id": self.entity_id,
                         "assignee_user_id": self._assignee_user_id,
-                        "assignee_name": next_user.name,
+                        "assignee_name": getattr(
+                            next_person, "name", next_person.entity_id
+                        ),
                     }
                     self.hass.bus.async_fire("chore_assigned", event_data)
                     LOGGER.debug(
-                        "(%s) Assigned chore to user %s (%s)",
+                        "(%s) Assigned chore to person %s (%s)",
                         self._attr_name,
-                        next_user.name,
-                        next_user.id,
+                        getattr(next_person, "name", next_person.entity_id),
+                        next_person.entity_id,
                     )
             except (
                 Exception
@@ -685,14 +713,14 @@ class Chore(RestoreEntity):
             self.update_state()
             return
 
-        # Validate the user via hass.auth
+        # Validate the assignee is a person entity
         try:
-            user = await self.hass.auth.async_get_user(user_id)  # type: ignore[attr-defined]
-            if user is None:
+            person_state = self.hass.states.get(user_id)
+            if person_state is None or not str(user_id).startswith("person."):
                 raise Exception
         except Exception:
             LOGGER.warning(
-                "(%s) Requested assignee user_id not found: %s",
+                "(%s) Requested assignee entity not found or not a person: %s",
                 self._attr_name,
                 user_id,
             )
@@ -703,14 +731,14 @@ class Chore(RestoreEntity):
         event_data = {
             "entity_id": self.entity_id,
             "assignee_user_id": user_id,
-            "assignee_name": user.name,
+            "assignee_name": getattr(person_state, "name", person_state.entity_id),
         }
         self.hass.bus.async_fire("chore_assigned", event_data)
         LOGGER.debug(
             "(%s) Manually assigned chore to %s (%s)",
             self._attr_name,
-            user.name,
-            user.id,
+            getattr(person_state, "name", person_state.entity_id),
+            user_id,
         )
         self.update_state()
 

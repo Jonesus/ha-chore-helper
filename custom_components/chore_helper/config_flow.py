@@ -55,7 +55,7 @@ async def _validate_config(
     if const.CONF_CHORE_DAY in data and data[const.CONF_CHORE_DAY] == "0":
         data[const.CONF_CHORE_DAY] = None
 
-    # Validate provided assignee user exists (if provided)
+    # Validate provided assignee entity exists and is a person (if provided)
     if const.CONF_ASSIGNEE_USER in data and data[const.CONF_ASSIGNEE_USER]:
         # Prefer explicit hass provided by calling code, else try handler.hass
         hass_instance = hass if hass is not None else getattr(handler, "hass", None)
@@ -63,7 +63,11 @@ async def _validate_config(
             # Can't validate without hass; raise schema error to force user correction
             raise SchemaFlowError("assignee_user")
         try:
-            await hass_instance.auth.async_get_user(data[const.CONF_ASSIGNEE_USER])  # type: ignore[attr-defined]
+            entity_state = hass_instance.states.get(data[const.CONF_ASSIGNEE_USER])
+            if entity_state is None or not str(
+                data[const.CONF_ASSIGNEE_USER]
+            ).startswith("person."):
+                raise Exception
         except Exception:
             raise SchemaFlowError("assignee_user")
 
@@ -157,29 +161,37 @@ async def general_config_schema(
     schema_obj = {required(CONF_NAME, handler.options): selector.TextSelector()}
     schema_obj.update(general_schema_definition(handler))
 
-    # Always expose an assignee dropdown. When possible, populate it from hass.auth users;
+    # Always expose an assignee dropdown. When possible, populate it from person entities;
     # otherwise provide a single placeholder option so the UI shows a Select.
-    placeholder_option = selector.SelectOptionDict(value="", label="No users available")
+    placeholder_option = selector.SelectOptionDict(
+        value="", label="No persons available"
+    )
 
     hass_instance = hass if hass is not None else getattr(handler, "hass", None)
 
     if hass_instance is not None:
         try:
-            users = await hass_instance.auth.async_get_users()  # type: ignore[attr-defined]
-            eligible = [
-                u
-                for u in users
-                if not getattr(u, "is_system", False) and getattr(u, "is_active", True)
+            # Build options from person entities (entity_id, friendly name)
+            states = (
+                hass_instance.states.async_all()
+                if hasattr(hass_instance.states, "async_all")
+                else hass_instance.states
+            )
+            persons = [
+                s for s in states if getattr(s, "entity_id", "").startswith("person.")
             ]
-            if eligible:
+            if persons:
                 options = [
-                    selector.SelectOptionDict(value=u.id, label=(u.name or u.id))
-                    for u in eligible
+                    selector.SelectOptionDict(
+                        value=p.entity_id,
+                        label=(getattr(p, "name", None) or p.entity_id),
+                    )
+                    for p in persons
                 ]
             else:
                 options = [placeholder_option]
         except Exception as e:
-            LOGGER.error("Error fetching users for assignee selector: %s", e)
+            LOGGER.error("Error fetching persons for assignee selector: %s", e)
             options = [placeholder_option]
     else:
         options = [placeholder_option]
@@ -206,29 +218,37 @@ async def general_options_schema(
     """
     schema_mapping = dict(general_schema_definition(handler))
 
-    # Always expose an assignee dropdown. When possible, populate it from hass.auth users;
+    # Always expose an assignee dropdown. When possible, populate it from person entities;
     # otherwise provide a single placeholder option so the UI shows a Select.
-    placeholder_option = selector.SelectOptionDict(value="", label="No users available")
+    placeholder_option = selector.SelectOptionDict(
+        value="", label="No persons available"
+    )
 
     hass_instance = hass if hass is not None else getattr(handler, "hass", None)
 
     if hass_instance is not None:
         try:
-            users = await hass_instance.auth.async_get_users()  # type: ignore[attr-defined]
-            eligible = [
-                u
-                for u in users
-                if not getattr(u, "is_system", False) and getattr(u, "is_active", True)
+            # Build options from person entities (entity_id, friendly name)
+            states = (
+                hass_instance.states.async_all()
+                if hasattr(hass_instance.states, "async_all")
+                else hass_instance.states
+            )
+            persons = [
+                s for s in states if getattr(s, "entity_id", "").startswith("person.")
             ]
-            if eligible:
+            if persons:
                 options = [
-                    selector.SelectOptionDict(value=u.id, label=(u.name or u.id))
-                    for u in eligible
+                    selector.SelectOptionDict(
+                        value=p.entity_id,
+                        label=(getattr(p, "name", None) or p.entity_id),
+                    )
+                    for p in persons
                 ]
             else:
                 options = [placeholder_option]
         except Exception as e:
-            LOGGER.error("Error fetching users for assignee selector: %s", e)
+            LOGGER.error("Error fetching persons for assignee selector: %s", e)
             options = [placeholder_option]
     else:
         options = [placeholder_option]

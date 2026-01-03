@@ -10,20 +10,20 @@ from custom_components.chore_helper import config_flow
 
 @pytest.mark.asyncio
 async def test_assignee_dropdown_fallback_in_config() -> None:
-    """Ensure a dropdown is built from hass.auth users for assignee selection."""
+    """Ensure a dropdown is built from person entities for assignee selection."""
 
-    user1 = SimpleNamespace(id="u1", name="Alice", is_system=False, is_active=True)
-    user2 = SimpleNamespace(id="u2", name="Bob", is_system=False, is_active=True)
+    person1 = SimpleNamespace(entity_id="person.p1", name="Alice")
+    person2 = SimpleNamespace(entity_id="person.p2", name="Bob")
 
-    async def _get_users():
-        return [user1, user2]
+    async def _get_states():
+        return [person1, person2]
 
-    fake_hass = SimpleNamespace(auth=SimpleNamespace(async_get_users=_get_users))
+    fake_hass = SimpleNamespace(states=SimpleNamespace(async_all=_get_states))
     handler = SimpleNamespace(options={}, hass=fake_hass)
 
     schema = await config_flow.general_config_schema(handler, hass=fake_hass)
 
-    # Search schema for a SelectSelector whose options include our test users
+    # Search schema for a SelectSelector whose options include our test persons
     def opt_value(o):
         if isinstance(o, dict):
             return o.get("value")
@@ -39,24 +39,26 @@ async def test_assignee_dropdown_fallback_in_config() -> None:
                 if isinstance(cfg, dict)
                 else getattr(cfg, "options", [])
             )
-            if any(opt_value(o) == "u1" for o in (opts or [])):
+            if any(opt_value(o) == "person.p1" for o in (opts or [])):
                 found = True
                 break
 
-    assert found, "Assignee SelectSelector with user options not found in config schema"
+    assert (
+        found
+    ), "Assignee SelectSelector with person options not found in config schema"
 
 
 @pytest.mark.asyncio
 async def test_assignee_dropdown_fallback_in_options() -> None:
-    """Ensure the options flow provides a dropdown built from hass.auth users."""
+    """Ensure the options flow provides a dropdown built from person entities."""
 
-    user1 = SimpleNamespace(id="u1", name="Alice", is_system=False, is_active=True)
-    user2 = SimpleNamespace(id="u2", name="Bob", is_system=False, is_active=True)
+    person1 = SimpleNamespace(entity_id="person.p1", name="Alice")
+    person2 = SimpleNamespace(entity_id="person.p2", name="Bob")
 
-    async def _get_users():
-        return [user1, user2]
+    async def _get_states():
+        return [person1, person2]
 
-    fake_hass = SimpleNamespace(auth=SimpleNamespace(async_get_users=_get_users))
+    fake_hass = SimpleNamespace(states=SimpleNamespace(async_all=_get_states))
     handler = SimpleNamespace(options={}, hass=fake_hass)
 
     schema = await config_flow.general_options_schema(handler, hass=fake_hass)
@@ -76,23 +78,23 @@ async def test_assignee_dropdown_fallback_in_options() -> None:
                 if isinstance(cfg, dict)
                 else getattr(cfg, "options", [])
             )
-            if any(opt_value(o) == "u1" for o in (opts or [])):
+            if any(opt_value(o) == "person.p1" for o in (opts or [])):
                 found = True
                 break
 
     assert (
         found
-    ), "Assignee SelectSelector with user options not found in options schema"
+    ), "Assignee SelectSelector with person options not found in options schema"
 
 
 @pytest.mark.asyncio
-async def test_assignee_select_when_user_fetch_fails() -> None:
-    """If fetching users fails, still provide a SelectSelector with a placeholder option."""
+async def test_assignee_select_when_person_fetch_fails() -> None:
+    """If fetching persons fails, still provide a SelectSelector with a placeholder option."""
 
-    async def _get_users():
+    async def _get_states():
         raise Exception("nope")
 
-    fake_hass = SimpleNamespace(auth=SimpleNamespace(async_get_users=_get_users))
+    fake_hass = SimpleNamespace(states=SimpleNamespace(async_all=_get_states))
     handler = SimpleNamespace(options={}, hass=fake_hass)
 
     schema = await config_flow.general_config_schema(handler, hass=fake_hass)
@@ -115,10 +117,10 @@ async def test_assignee_select_when_user_fetch_fails() -> None:
                 if isinstance(cfg, dict)
                 else getattr(cfg, "options", [])
             )
-            if any(opt_label(o) == "No users available" for o in (opts or [])):
+            if any(opt_label(o) == "No persons available" for o in (opts or [])):
                 placeholder_found = True
 
     assert found_select, "Expected a SelectSelector fallback for assignee"
     assert (
         placeholder_found
-    ), "Expected the placeholder option in SelectSelector when user fetch fails"
+    ), "Expected the placeholder option in SelectSelector when person fetch fails"
