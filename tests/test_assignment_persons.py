@@ -56,7 +56,9 @@ async def test_manual_assign_person():
 async def test_auto_assign_rotation_prefers_linked_users():
     hass = DummyHass()
     # Two persons: one linked to active user u1, another not linked
-    person1 = SimpleNamespace(entity_id="person.a", name="A", attributes={"user_id": "u1"})
+    person1 = SimpleNamespace(
+        entity_id="person.a", name="A", attributes={"user_id": "u1"}
+    )
     person2 = SimpleNamespace(entity_id="person.b", name="B", attributes={})
     hass.set_states([person1, person2])
 

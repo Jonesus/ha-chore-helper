@@ -423,14 +423,31 @@ class Chore(RestoreEntity):
         if self._auto_assign:
             try:
                 # Fetch all person entities
-                states = self.hass.states.async_all() if hasattr(self.hass.states, "async_all") else self.hass.states
-                persons = [s for s in states if getattr(s, "entity_id", "").startswith("person.")]
+                states = (
+                    self.hass.states.async_all()
+                    if hasattr(self.hass.states, "async_all")
+                    else self.hass.states
+                )
+                persons = [
+                    s
+                    for s in states
+                    if getattr(s, "entity_id", "").startswith("person.")
+                ]
 
                 # Prefer persons linked to active users when possible
                 try:
                     users = await self.hass.auth.async_get_users()
-                    eligible_user_ids = [u.id for u in users if not getattr(u, "is_system", False) and getattr(u, "is_active", True)]
-                    linked_persons = [p for p in persons if p.attributes.get("user_id") in eligible_user_ids]
+                    eligible_user_ids = [
+                        u.id
+                        for u in users
+                        if not getattr(u, "is_system", False)
+                        and getattr(u, "is_active", True)
+                    ]
+                    linked_persons = [
+                        p
+                        for p in persons
+                        if p.attributes.get("user_id") in eligible_user_ids
+                    ]
                 except Exception:
                     linked_persons = []
 
@@ -444,7 +461,12 @@ class Chore(RestoreEntity):
                     self._assignee_user_id = None
                 else:
                     # Deterministic order by person friendly name (fallback to entity_id)
-                    candidates.sort(key=lambda p: ((getattr(p, "name", "") or "").lower(), p.entity_id))
+                    candidates.sort(
+                        key=lambda p: (
+                            (getattr(p, "name", "") or "").lower(),
+                            p.entity_id,
+                        )
+                    )
                     next_person = None
                     if self._last_assigned_user_id is not None:
                         ids = [p.entity_id for p in candidates]
@@ -460,7 +482,9 @@ class Chore(RestoreEntity):
                     event_data = {
                         "entity_id": self.entity_id,
                         "assignee_user_id": self._assignee_user_id,
-                        "assignee_name": getattr(next_person, "name", next_person.entity_id),
+                        "assignee_name": getattr(
+                            next_person, "name", next_person.entity_id
+                        ),
                     }
                     self.hass.bus.async_fire("chore_assigned", event_data)
                     LOGGER.debug(
@@ -469,7 +493,9 @@ class Chore(RestoreEntity):
                         getattr(next_person, "name", next_person.entity_id),
                         next_person.entity_id,
                     )
-            except Exception:  # be defensive; do not let assignment failures break completion
+            except (
+                Exception
+            ):  # be defensive; do not let assignment failures break completion
                 LOGGER.exception("(%s) Error during assignment logic", self._attr_name)
 
         self.update_state()
